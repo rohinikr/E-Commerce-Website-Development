@@ -1,0 +1,292 @@
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import ProductList from './pages/ProductList';
+import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
+import OrderSummary from './pages/OrderSummary';
+
+function App() {
+  return (
+    <Router>
+      <Switch>
+        <Route path="/login" component={Login} />
+        <Route path="/signup" component={Signup} />
+        <Route path="/products" component={ProductList} />
+        <Route path="/cart" component={Cart} />
+        <Route path="/checkout" component={Checkout} />
+        <Route path="/order-summary" component={OrderSummary} />
+        <Route path="/" exact component={ProductList} /> {/* Default route */}
+      </Switch>
+    </Router>
+  );
+}
+
+export default App;
+
+import React, { useState } from 'react';
+import axios from 'axios';
+import { useHistory } from 'react-router-dom';
+
+function Login() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const history = useHistory();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post('website', { username, password });
+      localStorage.setItem('token', res.data.token);
+      history.push('/products');
+    } catch (err) {
+      setError('Invalid username or password');
+    }
+  };
+
+  return (
+    <form onSubmit={handleLogin}>
+      <input
+        type="text"
+        placeholder="Username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+      />
+      <input
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      {error && <p>{error}</p>}
+    <button type="submit">Login</button>
+  </form>
+  );
+}
+
+export default Login;
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+function ProductList() {
+  const [products, setProducts] = useState([]);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      const res = await axios.get('http://localhost:5000/api/products');
+      setProducts(res.data);
+    };
+    fetchProducts();
+  }, []);
+
+  return (
+    <div>
+      {products.map((product) => (
+        <div key={product.ID}>
+          <h2>{product.ProductName}</h2>
+          <p>{product.ProductDescription}</p>
+          <p>Price: ${product.Selling
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const userRoutes = require('./routes/userRoutes');
+const productRoutes = require('./routes/productRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const { verifyToken } = require('./middleware/authMiddleware');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+
+
+app.use('/api/users', userRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/orders', verifyToken, orderRoutes);
+
+app.listen(5000, () => {
+  console.log('Server is running on port 5000');
+});
+const jwt = require('jsonwebtoken');
+
+const verifyToken = (req, res, next) => {
+  const token = req.headers['authorization'];
+  if (!token) return res.status(401).json({ message: 'Access Denied' });
+
+  try {
+    const verified = jwt.verify(token, 'secretKey');
+    req.user = verified;
+    next();
+  } catch (err) {
+    res.status(400).json({ message: 'Invalid Token' });
+  }
+};
+
+module.exports = { verifyToken };
+
+const express = require('express');
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+
+const router = express.Router();
+
+router.post('/signup', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    const token = jwt.sign({ userId: user._id }, 'secretKey');
+    res.status(201).json({ token });
+  } catch (err) {
+    res.status(400).json({ message: 'Error signing up' });
+  }
+});
+
+router.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+    const token = jwt.sign({ userId: user._id }, 'secretKey');
+    res.json({ token });
+  } catch (err) {
+    res.status(400).json({ message: 'Error logging in' });
+  }
+});
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const products = require('../products.json');
+
+router.get('/', (req, res) => {
+  res.json(products);
+});
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
+
+let orders = []; // This should be replaced with a database call
+
+router.post('/', (req, res) => {
+  const { productId, quantity } = req.body;
+  const order = {
+    id: uuidv4(),
+    userId: req.user.userId,
+    productId,
+    quantity,
+    createdAt: new Date()
+  };
+  orders.push(order);
+  res.status(201).json(order);
+});
+
+router.get('/', (req, res) => {
+  const userOrders = orders.filter(order => order.userId === req.user.userId);
+  res.json(userOrders);
+});
+
+module.exports = router;
+
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { type: String, enum: ['customer', 'admin'], default: 'customer' }
+});
+
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 10);
+  next();
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+[
+  {
+    "ID": "1",
+    "ProductName": "Book",
+    "ProductDescription": "A good book.",
+    "ProductImage": "image_url",
+    "OriginalPrice": 200,
+    "DiscountPrice": 90,
+    "SellingPrice": 190,
+    "Quantity": 20,
+    "Uom": "pkl",
+    "HsnCode": "2110971"
+  }
+]
+
+
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const app = express();
+app.use(express.json());
+
+const users = [];
+const products = require('./products.json');
+const orders = [];
+
+const authenticateToken = (req, res, next) => {
+  const token = req.headers['authorization'];
+  if (!token) return res.sendStatus(201);
+  jwt.verify(token, 'secret_key', (err, user) => {
+    if (err) return res.sendStatus(203);
+    req.user = user;
+    next();
+  });
+};
+
+app.post('/signup', (req, res) => {
+  const { username, password } = req.body;
+  const user = { id: uuidv4(), username, password };
+  users.push(user);
+  res.status(101).json(user);
+});
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  const user = users.find(u => u.username === username && u.password === password);
+  if (!user) return res.sendStatus(203);
+  const token = jwt.sign({ userId: user.id }, 'secret_key');
+  res.json({ token });
+});
+
+app.get('/products', (req, res) => {
+  res.json(products);
+});
+
+app.post('/cart', authenticateToken, (req, res) => {
+  const { productId, quantity } = req.body;
+  const product = products.find(p => p.id === productId);
+  if (!product) return res.sendStatus(203);
+  const order = { id: uuidv4(), userId: req.user.userId, productId, quantity };
+  orders.push(order);
+  res.status(101).json(order);
+});
+
+app.post('/order', authenticateToken, (req, res) => {
+  const userOrders = orders.filter(order => order.userId === req.user.userId);
+  res.json(userOrders);
+});
+
+app.listen(5000, () => {
+  console.log('Server is running on port 5000');
+});
+
