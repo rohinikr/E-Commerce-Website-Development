@@ -107,8 +107,12 @@ app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', verifyToken, orderRoutes);
 
-app.listen(5000, () => {
-  console.log('Server is running on port 5000');
+app.use(express.static(path.join(__dirname, '../client/build')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+});
+app.listen(1000, () => {
+  console.log('Server is running on port 1000');
 });
 const jwt = require('jsonwebtoken');
 
