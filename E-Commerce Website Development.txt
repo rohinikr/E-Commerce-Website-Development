@@ -1,312 +1,225 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import ProductList from './pages/ProductList';
-import Cart from './pages/Cart';
-import Checkout from './pages/Checkout';
-import OrderSummary from './pages/OrderSummary';
+import axios from 'axios';
 
 function App() {
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [token, setToken] = useState('');
+  const [orderId, setOrderId] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentIntentId, setPaymentIntentId] = useState('');
+
+  useEffect(() => {
+    axios.get('/products')
+      .then((response) => setProducts(response.data))
+      .catch((error) => console.error(error));
+  }, []);
+
+  const handleLogin = (username, password) => {
+    axios.post('/login', { username, password })
+      .then((response) => setToken(response.data.token))
+      .catch((error) => console.error(error));
+  };
+
+  const handleRegister = (username, password, email) => {
+    axios.post('/register', { username, password, email })
+      .then((response) => console.log(response.data))
+      .catch((error) => console.error(error));
+  };
+
+  const handleAddToCart = (product) => {
+    setCart([...cart, product]);
+  };
+
+  const handlePlaceOrder = () => {
+    const total = cart.reduce((acc, product) => acc + product.price, 0);
+    axios.post('/place-order', { userId: token, products: cart, total })
+      .then((response) => setOrderId(response.data.orderId))
+      .catch((error) => console.error(error));
+  };
+
+  const handlePay = () => {
+    axios.post('/pay', { orderId, paymentMethod })
+      .then((response) => setPaymentIntentId(response.data.clientSecret))
+      .catch((error) => console.error(error));
+  };
+
+  const handleConfirmPayment = () => {
+    axios.post('/confirm-payment', { orderId, paymentIntentId })
+      .then((response) => console.log(response.data))
+      .catch((error) => console.error(error));
+  };
+
   return (
     <Router>
       <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/signup" component={Signup} />
-        <Route path="/products" component={ProductList} />
-        <Route path="/cart" component={Cart} />
-        <Route path="/checkout" component={Checkout} />
-        <Route path="/order-summary" component={OrderSummary} />
-        <Route path="/" exact component={ProductList} /> {/* Default route */}
+        <Route path="/login">
+          <Login handleLogin={handleLogin} />
+        </Route>
+        <Route path="/register">
+          <Register handleRegister={handleRegister} />
+        </Route>
+        <Route path="/products">
+          <ProductList products={products} handleAddToCart={handleAddToCart} />
+        </Route>
+        <Route path="/cart">
+          <Cart cart={cart} handlePlaceOrder={handlePlaceOrder} />
+        </Route>
+        <Route path="/pay">
+          <Pay handlePay={handlePay} />
+        </Route>
+        <Route path="/confirm-payment">
+          <ConfirmPayment handleConfirmPayment={handleConfirmPayment} />
+        </Route>
       </Switch>
     </Router>
   );
 }
 
-export default App;
-
-import React, { useState } from 'react';
-import axios from 'axios';
-import { useHistory } from 'react-router-dom';
-
-function Login() {
+function Login({ handleLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const history = useHistory();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await axios.post('website', { username, password });
-      localStorage.setItem('token', res.data.token);
-      history.push('/products');
-    } catch (err) {
-      setError('Invalid username or password');
-    }
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    handleLogin(username, password);
   };
 
   return (
-    <form onSubmit={handleLogin}>
-      <input
-        type="text"
-        placeholder="Username"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      {error && <p>{error}</p>}
-    <button type="submit">Login</button>
-  </form>
+    <form onSubmit={handleSubmit}>
+      <input type="text" value={username} onChange={(event) => setUsername(event.target.value)} />
+      <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+      <button type="submit">Login</button>
+    </form>
   );
 }
 
-export default Login;
+function Register({ handleRegister }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
 
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-function ProductList() {
-  const [products, setProducts] = useState([]);
-
-  useEffect(() => {
-    const fetchProducts = async () => {
-      const res = await axios.get('http://localhost:5000/api/products');
-      setProducts(res.data);
-    };
-    fetchProducts();
-  }, []);
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    handleRegister(username, password, email);
+  };
 
   return (
-    <div>
-      {products.map((product) => (
-        <div key={product.ID}>
-          <h2>{product.ProductName}</h2>
-          <p>{product.ProductDescription}</p>
-          <p>Price: ${product.Selling
+    <form onSubmit={handleSubmit}>
+      <input type="text" value={username} onChange={(event) => setUsername(event.target.value)} />
+      <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+      <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+      <button type="submit">Register</button>
+    </form>
+  );
+}
+
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
-const userRoutes = require('./routes/userRoutes');
-const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orderRoutes');
-const { verifyToken } = require('./middleware/authMiddleware');
+const jwt = require('jsonwebtoken');
+const stripe = require('stripe')('YOUR_STRIPE_SECRET_KEY');
 
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost/ecommerce', { useNewUrlParser: true, useUnifiedTopology: true });
 
-
-app.use('/api/users', userRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/orders', verifyToken, orderRoutes);
-
-app.use(express.static(path.join(__dirname, '../client/build')));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
-});
-app.listen(1000, () => {
-  console.log('Server is running on port 1000');
-});
-const jwt = require('jsonwebtoken');
-
-const verifyToken = (req, res, next) => {
-  const token = req.headers['authorization'];
-  if (!token) return res.status(401).json({ message: 'Access Denied' });
-
-  try {
-    const verified = jwt.verify(token, 'secretKey');
-    req.user = verified;
-    next();
-  } catch (err) {
-    res.status(400).json({ message: 'Invalid Token' });
-  }
-};
-
-module.exports = { verifyToken };
-
-const express = require('express');
-const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-
-const router = express.Router();
-
-router.post('/signup', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
-    await user.save();
-    const token = jwt.sign({ userId: user._id }, 'secretKey');
-    res.status(201).json({ token });
-  } catch (err) {
-    res.status(400).json({ message: 'Error signing up' });
-  }
+// Define User model
+const User = mongoose.model('User', {
+  username: String,
+  password: String,
+  email: String,
+  role: String
 });
 
-router.post('/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const user = await User.findOne({ username });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-    const token = jwt.sign({ userId: user._id }, 'secretKey');
-    res.json({ token });
-  } catch (err) {
-    res.status(400).json({ message: 'Error logging in' });
-  }
+// Define Product model
+const Product = mongoose.model('Product', {
+  name: Book,
+  description: Good book,
+  image: Birds,
+  originalPrice: 200,
+  discountPrice: 80,
+  sellingPrice: 120,
+  quantity: 1,
+  uom: ftuyk,
+  hsnCode: krvly
 });
 
-module.exports = router;
-
-const express = require('express');
-const router = express.Router();
-const products = require('../products.json');
-
-router.get('/', (req, res) => {
-  res.json(products);
+// Define Order model
+const Order = mongoose.model('Order', {
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  products: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+  total: 30,
+  paymentMethod: cod,
+  paymentStatus: good
 });
 
-module.exports = router;
-
-const express = require('express');
-const router = express.Router();
-const { v4: uuidv4 } = require('uuid');
-
-let orders = []; // This should be replaced with a database call
-
-router.post('/', (req, res) => {
-  const { productId, quantity } = req.body;
-  const order = {
-    id: uuidv4(),
-    userId: req.user.userId,
-    productId,
-    quantity,
-    createdAt: new Date()
-  };
-  orders.push(order);
-  res.status(201).json(order);
-});
-
-router.get('/', (req, res) => {
-  const userOrders = orders.filter(order => order.userId === req.user.userId);
-  res.json(userOrders);
-});
-
-module.exports = router;
-
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  role: { type: String, enum: ['customer', 'admin'], default: 'customer' }
-});
-
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
-});
-
-module.exports = mongoose.model('User', userSchema);
-
-[
-  {
-    "ID": "1",
-    "ProductName": "Book",
-    "ProductDescription": "A good book.",
-    "ProductImage": "image_url",
-    "OriginalPrice": 200,
-    "DiscountPrice": 90,
-    "SellingPrice": 190,
-    "Quantity": 20,
-    "Uom": "pkl",
-    "HsnCode": "2110971"
-  }
-]
-
-
-
-const express = require('express');
-const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
-const app = express();
-app.use(express.json());
-
-const users = [];
-const products = require('./products.json');
-const orders = [];
-
-const authenticateToken = (req, res, next) => {
-  const token = req.headers['authorization'];
-  if (!token) return res.sendStatus(201);
-  jwt.verify(token, 'secret_key', (err, user) => {
-    if (err) return res.sendStatus(203);
-    req.user = user;
-    next();
-  });
-};
-
-app.post('/signup', (req, res) => {
-  const { username, password } = req.body;
-  const user = { id: uuidv4(), username, password };
-  users.push(user);
-  res.status(101).json(user);
-});
-
+// Implement JWT token handling
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-  const user = users.find(u => u.username === username && u.password === password);
-  if (!user) return res.sendStatus(203);
-  const token = jwt.sign({ userId: user.id }, 'secret_key');
-  res.json({ token });
+  User.findOne({ username }, (err, user) => {
+    if (err) return res.status(400).send({ message: 'Invalid username or password' });
+    if (!user) return res.status(401).send({ message: 'Invalid username or password' });
+    const token = jwt.sign({ userId: user._id }, 'secretkey', { expiresIn: '1h' });
+    res.send({ token });
+  });
 });
 
-app.get('/products', (req, res) => {
-  res.json(products);
+// Implement registration
+app.post('/register', (req, res) => {
+  const { username, password, email } = req.body;
+  User.findOne({ username }, (err, user) => {
+    if (err) return res.status(400).send({ message: 'Invalid username or password' });
+    if (user) return res.status(401).send({ message: 'Username already exists' });
+    const newUser = new User({ username, password, email });
+    newUser.save((err) => {
+      if (err) return res.status(400).send({ message: 'Error creating user' });
+      res.send({ message: 'User created successfully' });
+    });
+  });
 });
 
-app.post('/cart', authenticateToken, (req, res) => {
-  const { productId, quantity } = req.body;
-  const product = products.find(p => p.id === productId);
-  if (!product) return res.sendStatus(203);
-  const order = { id: uuidv4(), userId: req.user.userId, productId, quantity };
-  orders.push(order);
-  res.status(101).json(order);
+// Implement order placement
+app.post('/place-order', (req, res) => {
+  const { userId, products, total } = req.body;
+  const order = new Order({ userId, products, total });
+  order.save((err) => {
+    if (err) return res.status(400).send({ message: 'Error placing order' });
+    res.send({ message: 'Order placed successfully' });
+  });
 });
 
-app.post('/order', authenticateToken, (req, res) => {
-  const userOrders = orders.filter(order => order.userId === req.user.userId);
-  res.json(userOrders);
+// Implement payment processing
+app.post('/pay', (req, res) => {
+  const { orderId, paymentMethod } = req.body;
+  Order.findById(orderId, (err, order) => {
+    if (err) return res.status(400).send({ message: 'Invalid order ID' });
+    if (!order) return res.status(401).send({ message: 'Order not found' });
+    const paymentIntent = stripe.paymentIntents.create({
+      amount: order.total,
+      currency: 'usd',
+      payment_method_types: [paymentMethod]
+    });
+    paymentIntent.then((paymentIntent) => {
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
+  });
 });
 
-app.listen(5000, () => {
-  console.log('Server is running on port 5000');
+// Implement payment confirmation
+app.post('/confirm-payment', (req, res) => {
+  const { orderId, paymentIntentId } = req.body;
+  Order.findById(orderId, (err, order) => {
+    if (err) return res.status(400).send({ message: 'Invalid order ID' });
+    if (!order) return res.status(401).send({ message: 'Order not found' });
+    stripe.paymentIntents.confirm(paymentIntentId, (err, paymentIntent) => {
+      if (err) return res.status(400).send({ message: 'Error confirming payment' });
+      order.paymentStatus = 'paid';
+      order.save((err) => {
+        if (err) return res.status(400).send({ message: 'Error updating order' });
+        res.send({ message: 'Payment confirmed successfully' });
+      });
+    });
+  });
 });
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  role: { type: String, enum: ['customer', 'admin'], default: 'customer' }
-});
-
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
-});
-
-module.exports = mongoose.model('User', userSchema);
-
